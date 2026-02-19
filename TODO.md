@@ -4,6 +4,7 @@
 - [x] Initialize Flutter project in repository.
 - [x] Define Phase 1 execution tracker in `TODO.md`.
 - [x] Add chess logic dependency (`chess`).
+- [x] Add temporary navigation drawer with Home and Import Game.
 - [ ] Add state management package (evaluate `riverpod` vs `bloc`).
 - [ ] Add routing skeleton for auth/lobby/game/profile.
 
@@ -20,9 +21,11 @@
 - [x] Add undo for local game.
 - [x] Add redo for local game.
 - [x] Show move history in SAN algebraic notation.
+- [x] Replace text/unicode piece rendering with SVG assets via `flutter_svg`.
 - [ ] Add captured pieces panel.
 - [ ] Add board orientation toggle.
 - [ ] Add analysis arrows/circles drawing layer.
+- [x] Add import flow that accepts PGN text or game URL (PGN fetch).
 
 ## Phase 1.2 - Game Modes
 - [ ] Define game mode domain model (`local`, `ai`, `online`).

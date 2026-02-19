@@ -1,5 +1,7 @@
 import 'package:chess/chess.dart' as chess;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(const MChessApp());
@@ -35,7 +37,7 @@ class ChessGamePage extends StatefulWidget {
 }
 
 class _ChessGamePageState extends State<ChessGamePage> {
-  final dynamic _game = chess.Chess();
+  chess.Chess _game = chess.Chess();
   final List<Map<String, dynamic>> _redoMoves = <Map<String, dynamic>>[];
 
   String? _selectedSquare;
@@ -57,6 +59,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
     final List<String> history = _buildSanHistory();
 
     return Scaffold(
+      drawer: _buildDrawer(),
       appBar: AppBar(
         title: const Text('MChess'),
         backgroundColor: const Color(0xFF262421),
@@ -102,6 +105,42 @@ class _ChessGamePageState extends State<ChessGamePage> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: <Widget>[
+            const DrawerHeader(
+              margin: EdgeInsets.only(bottom: 8),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Text(
+                  'MChess',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.home_outlined),
+              title: const Text('Home'),
+              onTap: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_outlined),
+              title: const Text('Import Game'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _openImportDialog();
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -156,12 +195,15 @@ class _ChessGamePageState extends State<ChessGamePage> {
       color = const Color(0xFFBACA44);
     }
 
-    final Widget pieceWidget = Center(
-      child: Text(
-        _pieceSymbol(piece),
-        style: const TextStyle(fontSize: 34),
-      ),
-    );
+    final Widget pieceWidget = piece == null
+        ? const SizedBox.shrink()
+        : Center(
+            child: SvgPicture.asset(
+              _pieceAsset(piece),
+              width: 42,
+              height: 42,
+            ),
+          );
 
     return DragTarget<String>(
       onWillAcceptWithDetails: (DragTargetDetails<String> details) {
@@ -245,6 +287,161 @@ class _ChessGamePageState extends State<ChessGamePage> {
     );
   }
 
+  Future<void> _openImportDialog() async {
+    final TextEditingController linkController = TextEditingController();
+    final TextEditingController pgnController = TextEditingController();
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: const Text('Import Game'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Paste a game link'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: linkController,
+                    minLines: 1,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      hintText: 'https://lichess.org/... or direct .pgn URL',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text('Or paste PGN'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: pgnController,
+                    minLines: 6,
+                    maxLines: 10,
+                    decoration: const InputDecoration(
+                      hintText: '[Event "..."]\n1. e4 e5 2. Nf3 ...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final NavigatorState dialogNavigator = Navigator.of(
+                    dialogContext,
+                  );
+                  final String rawPgn = pgnController.text.trim();
+                  final String rawLink = linkController.text.trim();
+                  if (rawPgn.isEmpty && rawLink.isEmpty) {
+                    _showMessage('Add a PGN or a game link first.');
+                    return;
+                  }
+
+                  String pgnText = rawPgn;
+                  if (pgnText.isEmpty) {
+                    try {
+                      pgnText = await _fetchPgnFromLink(rawLink);
+                    } catch (error) {
+                      _showMessage('Could not fetch PGN from link: $error');
+                      return;
+                    }
+                  }
+
+                  final bool imported = _importPgnIntoBoard(pgnText);
+                  if (!imported) {
+                    _showMessage('Invalid PGN. Please check and try again.');
+                    return;
+                  }
+
+                  if (!mounted) {
+                    return;
+                  }
+                  dialogNavigator.pop();
+                  _showMessage('Game imported successfully.');
+                },
+                child: const Text('Import'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      linkController.dispose();
+      pgnController.dispose();
+    }
+  }
+
+  Future<String> _fetchPgnFromLink(String rawLink) async {
+    final Uri? uri = _normalizePgnUri(rawLink);
+    if (uri == null) {
+      throw 'Invalid URL format.';
+    }
+
+    final http.Response response = await http
+        .get(uri, headers: <String, String>{'Accept': 'application/x-chess-pgn'})
+        .timeout(const Duration(seconds: 12));
+    if (response.statusCode != 200) {
+      throw 'HTTP ${response.statusCode}';
+    }
+
+    final String body = response.body.trim();
+    if (body.isEmpty) {
+      throw 'Empty response.';
+    }
+    return body;
+  }
+
+  Uri? _normalizePgnUri(String rawLink) {
+    final Uri? original = Uri.tryParse(rawLink.trim());
+    if (original == null || !original.hasScheme || !original.hasAuthority) {
+      return null;
+    }
+
+    final bool isLichess =
+        original.host == 'lichess.org' || original.host.endsWith('.lichess.org');
+    if (!isLichess) {
+      return original;
+    }
+
+    if (original.path.endsWith('.pgn')) {
+      return original;
+    }
+
+    return original.replace(path: '${original.path}.pgn');
+  }
+
+  bool _importPgnIntoBoard(String pgnText) {
+    final chess.Chess importedGame = chess.Chess();
+    final bool loaded = importedGame.load_pgn(pgnText);
+    if (!loaded) {
+      return false;
+    }
+
+    setState(() {
+      _game = importedGame;
+      _redoMoves.clear();
+      _clearSelection();
+    });
+    return true;
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   void _handleTap(String square) {
     if (_selectedSquare == null) {
       final Set<String> legal = _legalMovesFrom(square);
@@ -278,7 +475,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
     final List<dynamic> moves = _game.moves(<String, dynamic>{
       'square': square,
       'verbose': true,
-    }) as List<dynamic>;
+    });
 
     return moves
         .map((dynamic move) => (move as Map<String, dynamic>)['to'] as String)
@@ -289,7 +486,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
     final List<dynamic> legalMoves = _game.moves(<String, dynamic>{
       'square': from,
       'verbose': true,
-    }) as List<dynamic>;
+    });
 
     if (legalMoves.isEmpty) {
       setState(_clearSelection);
@@ -317,7 +514,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
       payload['promotion'] = promotion;
     }
 
-    final bool moved = _game.move(payload) as bool;
+    final bool moved = _game.move(payload);
     if (!moved) {
       return;
     }
@@ -377,7 +574,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
       'from': move['from'],
       'to': move['to'],
       if (move['promotion'] != null) 'promotion': move['promotion'],
-    }) as bool;
+    });
 
     if (!reapplied) {
       return;
@@ -389,7 +586,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
   List<String> _buildSanHistory() {
     final List<dynamic> moves = _game.getHistory(<String, dynamic>{
       'verbose': true,
-    }) as List<dynamic>;
+    });
 
     return moves
         .map((dynamic move) => (move as Map<String, dynamic>)['san'] as String)
@@ -415,31 +612,24 @@ class _ChessGamePageState extends State<ChessGamePage> {
     return '$turn to move';
   }
 
-  String _pieceSymbol(dynamic piece) {
+  String _pieceAsset(dynamic piece) {
     if (piece == null) {
       return '';
     }
 
-    final bool isWhite = piece.color == chess.Color.WHITE;
+    final String colorPrefix = piece.color == chess.Color.WHITE ? 'w' : 'b';
     final String type = piece.type.toString();
 
-    const Map<String, String> white = <String, String>{
-      'k': '?',
-      'q': '?',
-      'r': '?',
-      'b': '?',
-      'n': '?',
-      'p': '?',
-    };
-    const Map<String, String> black = <String, String>{
-      'k': '?',
-      'q': '?',
-      'r': '?',
-      'b': '?',
-      'n': '?',
-      'p': '?',
+    const Map<String, String> typeCode = <String, String>{
+      'k': 'K',
+      'q': 'Q',
+      'r': 'R',
+      'b': 'B',
+      'n': 'N',
+      'p': 'P',
     };
 
-    return isWhite ? white[type] ?? '' : black[type] ?? '';
+    final String pieceCode = typeCode[type] ?? '';
+    return 'assets/pieces/lichess/cburnett/$colorPrefix$pieceCode.svg';
   }
 }
