@@ -52,9 +52,10 @@
 - [ ] Implement add/remove/search friends workflow.
 
 ## Phase 1.4 - Stockfish Analysis (In-Game/Post-Game)
-- [ ] Select Stockfish integration package and platform setup.
-- [ ] Implement engine process lifecycle manager.
-- [ ] Implement UCI command adapter.
+- [x] Select Stockfish integration package and platform setup.
+- [x] Implement engine process lifecycle manager.
+- [x] Implement UCI command adapter.
+- [x] Add Stockfish UCI smoke test (`uci` -> `uciok`) for Android/iOS integration testing.
 - [ ] Add in-game quick evaluation bar updates.
 - [ ] Add post-game full analysis pipeline.
 - [ ] Classify mistakes/blunders/inaccuracies based on eval swings.
