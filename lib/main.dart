@@ -291,7 +291,6 @@ class _ChessGamePageState extends State<ChessGamePage> {
     final TextEditingController linkController = TextEditingController();
     final TextEditingController pgnController = TextEditingController();
 
-    try {
       await showDialog<void>(
         context: context,
         builder: (BuildContext dialogContext) {
@@ -335,15 +334,15 @@ class _ChessGamePageState extends State<ChessGamePage> {
               ),
               FilledButton(
                 onPressed: () async {
-                  final NavigatorState dialogNavigator = Navigator.of(
-                    dialogContext,
-                  );
+                  // final NavigatorState dialogNavigator = dialogContext.findAncestorStateOfType<NavigatorState>()!;
                   final String rawPgn = pgnController.text.trim();
                   final String rawLink = linkController.text.trim();
                   if (rawPgn.isEmpty && rawLink.isEmpty) {
                     _showMessage('Add a PGN or a game link first.');
                     return;
                   }
+
+                  Navigator.of(dialogContext).pop();
 
                   String pgnText = rawPgn;
                   if (pgnText.isEmpty) {
@@ -364,7 +363,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
                   if (!mounted) {
                     return;
                   }
-                  dialogNavigator.pop();
+                  // dialogNavigator.pop();
                   _showMessage('Game imported successfully.');
                 },
                 child: const Text('Import'),
@@ -373,10 +372,6 @@ class _ChessGamePageState extends State<ChessGamePage> {
           );
         },
       );
-    } finally {
-      linkController.dispose();
-      pgnController.dispose();
-    }
   }
 
   Future<String> _fetchPgnFromLink(String rawLink) async {
