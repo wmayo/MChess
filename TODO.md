@@ -56,11 +56,13 @@
 - [x] Implement engine process lifecycle manager.
 - [x] Implement UCI command adapter.
 - [x] Add Stockfish UCI smoke test (`uci` -> `uciok`) for Android/iOS integration testing.
-- [ ] Add in-game quick evaluation bar updates.
-- [ ] Add post-game full analysis pipeline.
-- [ ] Classify mistakes/blunders/inaccuracies based on eval swings.
-- [ ] Annotate move list with engine insights.
-- [ ] Add "best move" and principal variation display.
+- [x] Add in-game quick evaluation bar updates.
+- [x] Add post-game full analysis pipeline.
+- [x] Classify mistakes/blunders/inaccuracies based on eval swings.
+- [x] Annotate move list with engine insights.
+- [x] Add "best move" and principal variation display.
+- [x] Add Analyse Game entrypoint after game over and after imports.
+- [x] Add analysis page navigation controls and PV autoplay (`Show`).
 
 ## Validation and Quality
 - [x] Add initial widget smoke test for app shell.

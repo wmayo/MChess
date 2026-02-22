@@ -58,3 +58,15 @@ flutter test integration_test/stockfish_uci_smoke_test.dart -d <android-device-i
 # iOS
 flutter test integration_test/stockfish_uci_smoke_test.dart -d <ios-device-id>
 ```
+
+## Analysis Features
+
+Implemented analysis features:
+
+- Analyse trigger appears after game over and after any successful PGN import.
+- Post-game/import analysis page runs full-ply evaluation pipeline with progress.
+- Move annotations: best/excellent/good/inaccuracy/mistake/blunder.
+- Best move + PV display and board arrow overlay.
+- Navigation controls: start, previous, next, end, and move-list jump.
+- `Show` button autoplay for the principal variation.
+- In-game quick eval bar (live mode), suspended while full analysis is active.

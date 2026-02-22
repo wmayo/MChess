@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 
+import 'analysis/analysis_page.dart';
+import 'analysis/models.dart';
+import 'analysis/stockfish_lifecycle_manager.dart';
+import 'analysis/widgets/eval_bar.dart';
+
 void main() {
   runApp(const MChessApp());
 }
@@ -43,6 +48,12 @@ class _ChessGamePageState extends State<ChessGamePage> {
   String? _selectedSquare;
   Set<String> _legalTargets = <String>{};
 
+  List<String> _fenHistory = <String>[];
+  List<String> _playedMovesUci = <String>[];
+  bool _analysisEntryVisible = false;
+  bool _importInProgress = false;
+  final ValueNotifier<int> _quickEvalCp = ValueNotifier<int>(0);
+
   static const List<String> _files = <String>[
     'a',
     'b',
@@ -53,6 +64,19 @@ class _ChessGamePageState extends State<ChessGamePage> {
     'g',
     'h',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildHistoriesFromCurrentGame();
+    _triggerQuickEval();
+  }
+
+  @override
+  void dispose() {
+    _quickEvalCp.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +100,9 @@ class _ChessGamePageState extends State<ChessGamePage> {
           ),
         ],
       ),
+      bottomNavigationBar: _shouldShowAnalysisBanner
+          ? _buildAnalysisBanner()
+          : null,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
@@ -84,7 +111,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
               return Column(
                 children: <Widget>[
                   _buildStatusBar(),
-                  Expanded(child: _buildBoardArea()),
+                  Expanded(child: _buildBoardWithQuickEval()),
                   SizedBox(height: 240, child: _buildMoveHistory(history)),
                 ],
               );
@@ -97,7 +124,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
                   child: Column(
                     children: <Widget>[
                       _buildStatusBar(),
-                      Expanded(child: _buildBoardArea()),
+                      Expanded(child: _buildBoardWithQuickEval()),
                     ],
                   ),
                 ),
@@ -106,6 +133,56 @@ class _ChessGamePageState extends State<ChessGamePage> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  bool get _shouldShowAnalysisBanner {
+    return _game.game_over == true || _analysisEntryVisible;
+  }
+
+  Widget _buildAnalysisBanner() {
+    return Container(
+      color: const Color(0xFF262421),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              _analysisBannerText(),
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          FilledButton(
+            onPressed: _fenHistory.isEmpty ? null : _openAnalysisPage,
+            child: const Text('Analyse Game'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _analysisBannerText() {
+    if (_game.in_checkmate == true) {
+      return 'Game over - Checkmate';
+    }
+    if (_game.in_draw == true) {
+      return 'Game over - Draw';
+    }
+    return 'Analysis available';
+  }
+
+  void _openAnalysisPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) {
+          return AnalysisPage(
+            fenHistory: List<String>.from(_fenHistory),
+            sanMoves: List<String>.from(_buildSanHistory()),
+            playedMovesUci: List<String>.from(_playedMovesUci),
+            resultLabel: _analysisBannerText(),
+          );
+        },
       ),
     );
   }
@@ -158,6 +235,23 @@ class _ChessGamePageState extends State<ChessGamePage> {
     );
   }
 
+  Widget _buildBoardWithQuickEval() {
+    return Row(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(left: 10, top: 12, bottom: 12),
+          child: ValueListenableBuilder<int>(
+            valueListenable: _quickEvalCp,
+            builder: (BuildContext context, int cp, Widget? child) {
+              return EvalBar(centipawns: cp, mateIn: null, height: 260);
+            },
+          ),
+        ),
+        Expanded(child: _buildBoardArea()),
+      ],
+    );
+  }
+
   Widget _buildBoardArea() {
     return Center(
       child: AspectRatio(
@@ -198,11 +292,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
     final Widget pieceWidget = piece == null
         ? const SizedBox.shrink()
         : Center(
-            child: SvgPicture.asset(
-              _pieceAsset(piece),
-              width: 42,
-              height: 42,
-            ),
+            child: SvgPicture.asset(_pieceAsset(piece), width: 42, height: 42),
           );
 
     return DragTarget<String>(
@@ -291,6 +381,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
     final TextEditingController linkController = TextEditingController();
     final TextEditingController pgnController = TextEditingController();
 
+    try {
       await showDialog<void>(
         context: context,
         builder: (BuildContext dialogContext) {
@@ -334,7 +425,6 @@ class _ChessGamePageState extends State<ChessGamePage> {
               ),
               FilledButton(
                 onPressed: () async {
-                  // final NavigatorState dialogNavigator = dialogContext.findAncestorStateOfType<NavigatorState>()!;
                   final String rawPgn = pgnController.text.trim();
                   final String rawLink = linkController.text.trim();
                   if (rawPgn.isEmpty && rawLink.isEmpty) {
@@ -343,28 +433,25 @@ class _ChessGamePageState extends State<ChessGamePage> {
                   }
 
                   Navigator.of(dialogContext).pop();
+                  _importInProgress = true;
 
-                  String pgnText = rawPgn;
-                  if (pgnText.isEmpty) {
-                    try {
+                  try {
+                    String pgnText = rawPgn;
+                    if (pgnText.isEmpty) {
                       pgnText = await _fetchPgnFromLink(rawLink);
-                    } catch (error) {
-                      _showMessage('Could not fetch PGN from link: $error');
+                    }
+
+                    final bool imported = _importPgnIntoBoard(pgnText);
+                    if (!imported) {
+                      _showMessage('Invalid PGN. Please check and try again.');
                       return;
                     }
+                    _showMessage('Game imported successfully.');
+                  } catch (error) {
+                    _showMessage('Could not import game: $error');
+                  } finally {
+                    _importInProgress = false;
                   }
-
-                  final bool imported = _importPgnIntoBoard(pgnText);
-                  if (!imported) {
-                    _showMessage('Invalid PGN. Please check and try again.');
-                    return;
-                  }
-
-                  if (!mounted) {
-                    return;
-                  }
-                  // dialogNavigator.pop();
-                  _showMessage('Game imported successfully.');
                 },
                 child: const Text('Import'),
               ),
@@ -372,6 +459,10 @@ class _ChessGamePageState extends State<ChessGamePage> {
           );
         },
       );
+    } finally {
+      linkController.dispose();
+      pgnController.dispose();
+    }
   }
 
   Future<String> _fetchPgnFromLink(String rawLink) async {
@@ -381,7 +472,10 @@ class _ChessGamePageState extends State<ChessGamePage> {
     }
 
     final http.Response response = await http
-        .get(uri, headers: <String, String>{'Accept': 'application/x-chess-pgn'})
+        .get(
+          uri,
+          headers: <String, String>{'Accept': 'application/x-chess-pgn'},
+        )
         .timeout(const Duration(seconds: 12));
     if (response.statusCode != 200) {
       throw 'HTTP ${response.statusCode}';
@@ -401,7 +495,8 @@ class _ChessGamePageState extends State<ChessGamePage> {
     }
 
     final bool isLichess =
-        original.host == 'lichess.org' || original.host.endsWith('.lichess.org');
+        original.host == 'lichess.org' ||
+        original.host.endsWith('.lichess.org');
     if (!isLichess) {
       return original;
     }
@@ -424,7 +519,9 @@ class _ChessGamePageState extends State<ChessGamePage> {
       _game = importedGame;
       _redoMoves.clear();
       _clearSelection();
+      _analysisEntryVisible = true;
     });
+    _rebuildHistoriesFromCurrentGame();
     return true;
   }
 
@@ -432,9 +529,9 @@ class _ChessGamePageState extends State<ChessGamePage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _handleTap(String square) {
@@ -517,7 +614,10 @@ class _ChessGamePageState extends State<ChessGamePage> {
     setState(() {
       _redoMoves.clear();
       _clearSelection();
+      _analysisEntryVisible = _game.game_over == true;
     });
+    _rebuildHistoriesFromCurrentGame();
+    _triggerQuickEval();
   }
 
   Future<String?> _showPromotionPicker() {
@@ -556,7 +656,10 @@ class _ChessGamePageState extends State<ChessGamePage> {
     setState(() {
       _redoMoves.add(Map<String, dynamic>.from(undone as Map));
       _clearSelection();
+      _analysisEntryVisible = _game.game_over == true;
     });
+    _rebuildHistoriesFromCurrentGame();
+    _triggerQuickEval();
   }
 
   void _redo() {
@@ -575,7 +678,12 @@ class _ChessGamePageState extends State<ChessGamePage> {
       return;
     }
 
-    setState(_clearSelection);
+    setState(() {
+      _clearSelection();
+      _analysisEntryVisible = _game.game_over == true;
+    });
+    _rebuildHistoriesFromCurrentGame();
+    _triggerQuickEval();
   }
 
   List<String> _buildSanHistory() {
@@ -586,6 +694,80 @@ class _ChessGamePageState extends State<ChessGamePage> {
     return moves
         .map((dynamic move) => (move as Map<String, dynamic>)['san'] as String)
         .toList();
+  }
+
+  void _rebuildHistoriesFromCurrentGame() {
+    final chess.Chess replay = _game.copy();
+    while (replay.undo() != null) {
+      // rewind to initial imported/starting position
+    }
+
+    final List<dynamic> history = _game.getHistory(<String, dynamic>{
+      'verbose': true,
+    });
+
+    final List<String> fenHistory = <String>[replay.fen];
+    final List<String> uciMoves = <String>[];
+
+    for (final dynamic raw in history) {
+      final Map<String, dynamic> move = raw as Map<String, dynamic>;
+      final String from = move['from'] as String;
+      final String to = move['to'] as String;
+      final String san = (move['san'] as String?) ?? '';
+      final String flags = (move['flags'] as String?) ?? '';
+
+      String? promotion;
+      if (flags.contains('p')) {
+        promotion = _promotionFromSan(san);
+      }
+
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'from': from,
+        'to': to,
+        if (promotion != null) 'promotion': promotion,
+      };
+
+      if (!replay.move(payload)) {
+        break;
+      }
+
+      fenHistory.add(replay.fen);
+      uciMoves.add('$from$to${promotion ?? ''}');
+    }
+
+    _fenHistory = fenHistory;
+    _playedMovesUci = uciMoves;
+  }
+
+  String? _promotionFromSan(String san) {
+    final RegExpMatch? match = RegExp(r'=([QRBN])').firstMatch(san);
+    if (match == null) {
+      return null;
+    }
+    return match.group(1)!.toLowerCase();
+  }
+
+  Future<void> _triggerQuickEval() async {
+    if (_importInProgress || _game.game_over == true) {
+      return;
+    }
+    if (StockfishLifecycleManager.instance.analysisActive) {
+      return;
+    }
+
+    EvalResult? eval;
+    try {
+      eval = await StockfishLifecycleManager.instance.requestQuickEval(
+        _game.fen,
+      );
+    } catch (_) {
+      return;
+    }
+
+    if (!mounted || eval == null) {
+      return;
+    }
+    _quickEvalCp.value = eval.centipawns;
   }
 
   void _clearSelection() {

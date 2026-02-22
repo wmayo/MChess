@@ -1,0 +1,132 @@
+import 'package:flutter/material.dart';
+
+import '../models.dart';
+
+class AnnotatedMoveList extends StatelessWidget {
+  const AnnotatedMoveList({
+    super.key,
+    required this.sanMoves,
+    required this.annotations,
+    required this.currentPly,
+    required this.onJumpToPly,
+  });
+
+  final List<String> sanMoves;
+  final List<MoveAnnotation?> annotations;
+  final int currentPly;
+  final ValueChanged<int> onJumpToPly;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sanMoves.isEmpty) {
+      return const Text('No moves.');
+    }
+    return ListView.builder(
+      itemCount: (sanMoves.length / 2).ceil(),
+      itemBuilder: (BuildContext context, int index) {
+        final int whitePly = index * 2;
+        final int blackPly = whitePly + 1;
+        final bool isWhiteSelected = currentPly == whitePly + 1;
+        final bool isBlackSelected = currentPly == blackPly + 1;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            children: <Widget>[
+              Text('${index + 1}.'),
+              _moveChip(
+                text: _withGlyph(whitePly),
+                selected: isWhiteSelected,
+                onTap: () => onJumpToPly(whitePly + 1),
+                color: _colorFor(whitePly),
+              ),
+              if (blackPly < sanMoves.length)
+                _moveChip(
+                  text: _withGlyph(blackPly),
+                  selected: isBlackSelected,
+                  onTap: () => onJumpToPly(blackPly + 1),
+                  color: _colorFor(blackPly),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _moveChip({
+    required String text,
+    required bool selected,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0x3347A8FF) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _withGlyph(int ply) {
+    final String san = sanMoves[ply];
+    if (ply >= annotations.length || annotations[ply] == null) {
+      return san;
+    }
+    return '$san ${_glyphFor(annotations[ply]!.classification)}';
+  }
+
+  Color _colorFor(int ply) {
+    if (ply >= annotations.length || annotations[ply] == null) {
+      return Colors.white;
+    }
+    return _classificationColor(annotations[ply]!.classification);
+  }
+
+  String _glyphFor(MoveClass c) {
+    switch (c) {
+      case MoveClass.best:
+      case MoveClass.excellent:
+        return '✦';
+      case MoveClass.good:
+        return '✔';
+      case MoveClass.inaccuracy:
+        return '?!';
+      case MoveClass.mistake:
+        return '?';
+      case MoveClass.blunder:
+        return '??';
+    }
+  }
+
+  Color _classificationColor(MoveClass c) {
+    switch (c) {
+      case MoveClass.best:
+      case MoveClass.excellent:
+        return const Color(0xFF2DD4BF);
+      case MoveClass.good:
+        return const Color(0xFF22C55E);
+      case MoveClass.inaccuracy:
+        return const Color(0xFFF59E0B);
+      case MoveClass.mistake:
+        return const Color(0xFFFB923C);
+      case MoveClass.blunder:
+        return const Color(0xFFEF4444);
+    }
+  }
+}
