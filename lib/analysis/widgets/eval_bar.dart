@@ -7,19 +7,29 @@ class EvalBar extends StatelessWidget {
     required this.mateIn,
     this.width = 28,
     this.height = 240,
+    this.isLoading = false,
+    this.isPaused = false,
   });
 
   final int centipawns;
   final int? mateIn;
   final double width;
   final double height;
+  final bool isLoading;
+  final bool isPaused;
 
   @override
   Widget build(BuildContext context) {
     final double normalized = ((centipawns.clamp(-800, 800) + 800) / 1600)
         .toDouble();
     final double whiteHeight = height * normalized;
-    final String label = mateIn == null ? '${centipawns / 100}' : 'M$mateIn';
+    final String label = isPaused
+        ? 'PAUSE'
+        : isLoading
+        ? '...'
+        : mateIn == null
+        ? '${centipawns / 100}'
+        : 'M$mateIn';
 
     return Container(
       width: width,
@@ -58,7 +68,7 @@ class EvalBar extends StatelessWidget {
                 child: Text(
                   label,
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: isPaused ? 8 : 10,
                     fontWeight: FontWeight.w700,
                     color: normalized > 0.5 ? Colors.black : Colors.white,
                   ),
@@ -66,6 +76,13 @@ class EvalBar extends StatelessWidget {
               ),
             ),
           ),
+          if (isLoading)
+            const Positioned(
+              top: 4,
+              left: 4,
+              right: 4,
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
         ],
       ),
     );

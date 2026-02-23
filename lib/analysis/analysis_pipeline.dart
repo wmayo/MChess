@@ -17,11 +17,21 @@ class AnalysisPipeline {
     _cancelled = true;
   }
 
-  Future<List<EvalResult?>> run({
+  Future<List<AnalysisFrame>> run({
     required List<String> fenHistory,
     required ValueNotifier<double> progress,
+    void Function(int index, AnalysisFrame frame)? onFrameReady,
   }) async {
-    final List<EvalResult?> results = <EvalResult?>[];
+    final List<AnalysisFrame> results = fenHistory
+        .map(
+          (String fen) => AnalysisFrame(
+            fen: fen,
+            eval: null,
+            annotation: null,
+            status: AnalysisStatus.pending,
+          ),
+        )
+        .toList();
     if (fenHistory.isEmpty) {
       progress.value = 1.0;
       return results;
@@ -36,16 +46,27 @@ class AnalysisPipeline {
         }
 
         EvalResult? eval;
+        AnalysisStatus status = AnalysisStatus.ready;
         try {
           eval = await _manager.evaluatePosition(
             fen: fenHistory[i],
             depth: kAnalysisDepth,
             moveTimeMs: kAnalysisMoveTimeMs,
           );
+          if (eval == null) {
+            status = AnalysisStatus.timeout;
+          }
         } catch (_) {
           eval = null;
+          status = AnalysisStatus.error;
         }
-        results.add(eval);
+        results[i] = AnalysisFrame(
+          fen: fenHistory[i],
+          eval: eval,
+          annotation: null,
+          status: status,
+        );
+        onFrameReady?.call(i, results[i]);
         progress.value = (i + 1) / fenHistory.length;
       }
       return results;

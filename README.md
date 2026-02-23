@@ -65,8 +65,13 @@ Implemented analysis features:
 
 - Analyse trigger appears after game over and after any successful PGN import.
 - Post-game/import analysis page runs full-ply evaluation pipeline with progress.
+- Progressive analysis updates: reviewed moves become available as each ply completes.
 - Move annotations: best/excellent/good/inaccuracy/mistake/blunder.
 - Best move + PV display and board arrow overlay.
-- Navigation controls: start, previous, next, end, and move-list jump.
+- Selected-move review panel shows played move, best move, cp loss, class, and PV.
+- Analysis summary header shows result, move counts, class counts, and rough accuracy.
+- Navigation controls: start, previous, next, end, next mistake, previous mistake, and move-list jump.
 - `Show` button autoplay for the principal variation.
-- In-game quick eval bar (live mode), suspended while full analysis is active.
+- Completed analysis results are cached in-session for faster re-open of the same game.
+- In-game quick eval bar (live mode), with busy/paused indicators and mate display.
+- Quick eval is suspended while full analysis is active and paused on app background.

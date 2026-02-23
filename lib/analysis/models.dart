@@ -14,6 +14,8 @@ class EvalResult {
   });
 }
 
+enum AnalysisStatus { ready, timeout, error, pending }
+
 enum MoveClass { best, excellent, good, inaccuracy, mistake, blunder }
 
 class MoveAnnotation {
@@ -32,10 +34,12 @@ class AnalysisFrame {
   final String fen;
   final EvalResult? eval;
   final MoveAnnotation? annotation;
+  final AnalysisStatus status;
 
   const AnalysisFrame({
     required this.fen,
     required this.eval,
     required this.annotation,
+    this.status = AnalysisStatus.ready,
   });
 }

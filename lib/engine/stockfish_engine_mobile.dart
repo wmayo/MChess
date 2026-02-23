@@ -42,6 +42,13 @@ class UnsupportedUciEngineIO implements UciEngine {
   }
 
   @override
+  Future<void> isReady() {
+    throw UnsupportedError(
+      'Stockfish engine is only supported on Android and iOS.',
+    );
+  }
+
+  @override
   Future<void> setOption(String name, String value) {
     throw UnsupportedError(
       'Stockfish engine is only supported on Android and iOS.',
@@ -95,8 +102,10 @@ class StockfishEngineMobile implements UciEngine {
   bool _started = false;
   bool _initialized = false;
   Completer<void>? _pendingUciCompleter;
+  Completer<void>? _pendingReadyCompleter;
   Completer<EvalResult?>? _pendingEvalCompleter;
   EvalResult? _bestEvalCandidate;
+  bool _searchInProgress = false;
 
   @override
   Stream<String> get stdoutLines => _stdoutController.stream;
@@ -181,11 +190,36 @@ class StockfishEngineMobile implements UciEngine {
   }
 
   @override
+  Future<void> isReady() async {
+    if (!_initialized) {
+      await initialize();
+    }
+    if (_pendingReadyCompleter != null) {
+      return _pendingReadyCompleter!.future;
+    }
+
+    final Completer<void> completer = Completer<void>();
+    _pendingReadyCompleter = completer;
+    send('isready');
+
+    try {
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () =>
+            throw TimeoutException('Timed out waiting for readyok.'),
+      );
+    } finally {
+      _pendingReadyCompleter = null;
+    }
+  }
+
+  @override
   Future<void> setOption(String name, String value) async {
     if (!_initialized) {
       await initialize();
     }
     send('setoption name $name value $value');
+    await isReady();
   }
 
   @override
@@ -194,6 +228,7 @@ class StockfishEngineMobile implements UciEngine {
       await initialize();
     }
     send('ucinewgame');
+    await isReady();
   }
 
   @override
@@ -201,6 +236,7 @@ class StockfishEngineMobile implements UciEngine {
     if (!_initialized) {
       await initialize();
     }
+    await isReady();
     send('position fen $fen');
   }
 
@@ -218,6 +254,9 @@ class StockfishEngineMobile implements UciEngine {
   @override
   Future<EvalResult?> stop() async {
     if (!_initialized) {
+      return null;
+    }
+    if (!_searchInProgress) {
       return null;
     }
     return _runEvalCommand('stop', timeout: const Duration(seconds: 4));
@@ -252,6 +291,7 @@ class StockfishEngineMobile implements UciEngine {
     _stdoutSubscription = null;
     _clearPendingEval();
     _pendingUciCompleter = null;
+    _pendingReadyCompleter = null;
 
     if (!_stdoutController.isClosed) {
       await _stdoutController.close();
@@ -294,6 +334,7 @@ class StockfishEngineMobile implements UciEngine {
     final Completer<EvalResult?> completer = Completer<EvalResult?>();
     _pendingEvalCompleter = completer;
     _bestEvalCandidate = null;
+    _searchInProgress = true;
 
     send(command);
 
@@ -301,6 +342,7 @@ class StockfishEngineMobile implements UciEngine {
       return await completer.future.timeout(timeout, onTimeout: () => null);
     } finally {
       _clearPendingEval();
+      _searchInProgress = false;
     }
   }
 
@@ -318,6 +360,11 @@ class StockfishEngineMobile implements UciEngine {
     if (trimmed == 'uciok' && _pendingUciCompleter != null) {
       if (!_pendingUciCompleter!.isCompleted) {
         _pendingUciCompleter!.complete();
+      }
+    }
+    if (trimmed == 'readyok' && _pendingReadyCompleter != null) {
+      if (!_pendingReadyCompleter!.isCompleted) {
+        _pendingReadyCompleter!.complete();
       }
     }
 
@@ -363,7 +410,9 @@ class StockfishEngineMobile implements UciEngine {
             pv: _bestEvalCandidate!.pv,
             depth: _bestEvalCandidate!.depth,
           );
-    pendingEval.complete(resolved);
+    if (!pendingEval.isCompleted) {
+      pendingEval.complete(resolved);
+    }
   }
 
   _ParsedInfo? _parseInfo(String line) {

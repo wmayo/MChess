@@ -9,12 +9,14 @@ class AnnotatedMoveList extends StatelessWidget {
     required this.annotations,
     required this.currentPly,
     required this.onJumpToPly,
+    this.statuses,
   });
 
   final List<String> sanMoves;
   final List<MoveAnnotation?> annotations;
   final int currentPly;
   final ValueChanged<int> onJumpToPly;
+  final List<AnalysisStatus>? statuses;
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +36,12 @@ class AnnotatedMoveList extends StatelessWidget {
           child: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 8,
+            runSpacing: 4,
             children: <Widget>[
-              Text('${index + 1}.'),
+              Text(
+                '${index + 1}.',
+                style: const TextStyle(color: Colors.white70),
+              ),
               _moveChip(
                 text: _withGlyph(whitePly),
                 selected: isWhiteSelected,
@@ -66,15 +72,18 @@ class AnnotatedMoveList extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: selected ? const Color(0x3347A8FF) : Colors.transparent,
+          color: selected ? const Color(0x3347A8FF) : const Color(0x0FFFFFFF),
           borderRadius: BorderRadius.circular(6),
+          border: selected
+              ? Border.all(color: const Color(0x6647A8FF))
+              : Border.all(color: Colors.transparent),
         ),
         child: Text(
           text,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: selected ? FontWeight.bold : FontWeight.w500,
             color: color,
           ),
@@ -85,6 +94,18 @@ class AnnotatedMoveList extends StatelessWidget {
 
   String _withGlyph(int ply) {
     final String san = sanMoves[ply];
+    final AnalysisStatus? status = statuses != null && ply < statuses!.length
+        ? statuses![ply]
+        : null;
+    if (status == AnalysisStatus.pending) {
+      return '$san ...';
+    }
+    if (status == AnalysisStatus.timeout) {
+      return '$san [timeout]';
+    }
+    if (status == AnalysisStatus.error) {
+      return '$san [error]';
+    }
     if (ply >= annotations.length || annotations[ply] == null) {
       return san;
     }
@@ -92,6 +113,15 @@ class AnnotatedMoveList extends StatelessWidget {
   }
 
   Color _colorFor(int ply) {
+    final AnalysisStatus? status = statuses != null && ply < statuses!.length
+        ? statuses![ply]
+        : null;
+    if (status == AnalysisStatus.pending) {
+      return Colors.white70;
+    }
+    if (status == AnalysisStatus.timeout || status == AnalysisStatus.error) {
+      return const Color(0xFFFB923C);
+    }
     if (ply >= annotations.length || annotations[ply] == null) {
       return Colors.white;
     }
@@ -102,9 +132,9 @@ class AnnotatedMoveList extends StatelessWidget {
     switch (c) {
       case MoveClass.best:
       case MoveClass.excellent:
-        return '✦';
+        return '\u2726';
       case MoveClass.good:
-        return '✔';
+        return '\u2714';
       case MoveClass.inaccuracy:
         return '?!';
       case MoveClass.mistake:

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../engine/engine_factory.dart';
 import '../engine/uci_engine.dart';
 import 'models.dart';
@@ -15,6 +17,10 @@ class StockfishLifecycleManager {
   bool _ready = false;
   bool _analysisActive = false;
   int _quickEvalToken = 0;
+  final ValueNotifier<bool> quickEvalBusy = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> quickEvalPaused = ValueNotifier<bool>(false);
+  final Map<String, List<EvalResult?>> _analysisEvalCache =
+      <String, List<EvalResult?>>{};
 
   bool get analysisActive => _analysisActive;
 
@@ -24,6 +30,7 @@ class StockfishLifecycleManager {
     }
     await _engine.start();
     await _engine.initialize();
+    await _engine.isReady();
     await _engine.newGame();
     _ready = true;
   }
@@ -44,6 +51,11 @@ class StockfishLifecycleManager {
 
   void setAnalysisActive(bool value) {
     _analysisActive = value;
+    quickEvalPaused.value = value;
+  }
+
+  void setQuickEvalPaused(bool value) {
+    quickEvalPaused.value = value || _analysisActive;
   }
 
   Future<EvalResult?> evaluatePosition({
@@ -58,17 +70,24 @@ class StockfishLifecycleManager {
   }
 
   Future<EvalResult?> requestQuickEval(String fen) {
-    if (_analysisActive) {
+    if (_analysisActive || quickEvalPaused.value) {
       return Future<EvalResult?>.value(null);
     }
 
     final int token = ++_quickEvalToken;
     return runSerialized<EvalResult?>((UciEngine engine) async {
-      if (_analysisActive || token != _quickEvalToken) {
+      if (_analysisActive ||
+          quickEvalPaused.value ||
+          token != _quickEvalToken) {
         return null;
       }
+      quickEvalBusy.value = true;
       await engine.setPosition(fen);
-      return engine.go(depth: 12, moveTimeMs: 500);
+      try {
+        return engine.go(depth: 12, moveTimeMs: 500);
+      } finally {
+        quickEvalBusy.value = false;
+      }
     });
   }
 
@@ -76,5 +95,19 @@ class StockfishLifecycleManager {
     return runSerialized<void>((UciEngine engine) async {
       await engine.stop();
     });
+  }
+
+  String cacheKeyForFenHistory(List<String> fenHistory) => fenHistory.join('|');
+
+  List<EvalResult?>? getCachedEvaluations(String key) {
+    final List<EvalResult?>? values = _analysisEvalCache[key];
+    if (values == null) {
+      return null;
+    }
+    return List<EvalResult?>.from(values);
+  }
+
+  void setCachedEvaluations(String key, List<EvalResult?> evaluations) {
+    _analysisEvalCache[key] = List<EvalResult?>.from(evaluations);
   }
 }
