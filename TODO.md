@@ -63,6 +63,18 @@
 - [x] Add "best move" and principal variation display.
 - [x] Add Analyse Game entrypoint after game over and after imports.
 - [x] Add analysis page navigation controls and PV autoplay (`Show`).
+- [x] Add review summary header (result, move count, class counts, rough accuracy).
+- [x] Add selected-move review panel (played/best/cp loss/PV/status).
+- [x] Add next/previous mistake navigation shortcuts in analysis.
+- [x] Support progressive analysis consumption while pipeline is running.
+- [x] Add timeout/error/pending markers in annotated move list.
+- [x] Cache completed analysis evaluations for fast reopen during app session.
+- [x] Add `isready` UCI synchronization support.
+- [x] Improve quick eval UX states (busy/paused/mate text) and lifecycle pause/resume hooks.
+- [x] Debounce quick eval requests to coalesce rapid board updates.
+- [ ] Add analysis result persistence across app relaunches (disk cache).
+- [ ] Add retry-per-move control for timeout/error positions.
+- [ ] Add optional MultiPV support for richer suggestions.
 
 ## Validation and Quality
 - [x] Add initial widget smoke test for app shell.

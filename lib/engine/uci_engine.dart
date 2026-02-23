@@ -7,6 +7,8 @@ abstract class UciEngine {
 
   Future<void> initialize();
 
+  Future<void> isReady();
+
   Future<void> setOption(String name, String value);
 
   Future<void> newGame();

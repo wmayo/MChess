@@ -1,4 +1,5 @@
 import 'models.dart';
+import 'review_models.dart';
 
 class MoveClassifier {
   List<MoveAnnotation?> classifyAll({
@@ -82,5 +83,56 @@ class MoveClassifier {
       cpLoss: cpLoss,
       engineEval: evalBefore,
     );
+  }
+
+  AnalysisSummary summarize(List<MoveAnnotation?> annotations) {
+    final Map<MoveClass, int> counts = <MoveClass, int>{
+      for (final MoveClass c in MoveClass.values) c: 0,
+    };
+
+    double whiteScore = 0;
+    double blackScore = 0;
+    int whiteMoves = 0;
+    int blackMoves = 0;
+
+    for (int i = 0; i < annotations.length; i++) {
+      final MoveAnnotation? ann = annotations[i];
+      if (ann == null) {
+        continue;
+      }
+      counts[ann.classification] = (counts[ann.classification] ?? 0) + 1;
+      final double score = _accuracyPoints(ann.classification);
+      if (i.isEven) {
+        whiteMoves++;
+        whiteScore += score;
+      } else {
+        blackMoves++;
+        blackScore += score;
+      }
+    }
+
+    return AnalysisSummary(
+      totalMoves: annotations.length,
+      counts: counts,
+      whiteAccuracy: whiteMoves == 0 ? null : (whiteScore / whiteMoves) * 100,
+      blackAccuracy: blackMoves == 0 ? null : (blackScore / blackMoves) * 100,
+    );
+  }
+
+  double _accuracyPoints(MoveClass c) {
+    switch (c) {
+      case MoveClass.best:
+        return 1.0;
+      case MoveClass.excellent:
+        return 0.97;
+      case MoveClass.good:
+        return 0.9;
+      case MoveClass.inaccuracy:
+        return 0.7;
+      case MoveClass.mistake:
+        return 0.45;
+      case MoveClass.blunder:
+        return 0.1;
+    }
   }
 }

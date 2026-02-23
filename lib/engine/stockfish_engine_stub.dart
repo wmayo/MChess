@@ -22,6 +22,13 @@ class UnsupportedUciEngine implements UciEngine {
   }
 
   @override
+  Future<void> isReady() {
+    throw UnsupportedError(
+      'Stockfish engine is only supported on Android and iOS.',
+    );
+  }
+
+  @override
   Future<void> setOption(String name, String value) {
     throw UnsupportedError(
       'Stockfish engine is only supported on Android and iOS.',

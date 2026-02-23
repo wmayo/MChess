@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:chess/chess.dart' as chess;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -41,7 +43,8 @@ class ChessGamePage extends StatefulWidget {
   State<ChessGamePage> createState() => _ChessGamePageState();
 }
 
-class _ChessGamePageState extends State<ChessGamePage> {
+class _ChessGamePageState extends State<ChessGamePage>
+    with WidgetsBindingObserver {
   chess.Chess _game = chess.Chess();
   final List<Map<String, dynamic>> _redoMoves = <Map<String, dynamic>>[];
 
@@ -52,7 +55,10 @@ class _ChessGamePageState extends State<ChessGamePage> {
   List<String> _playedMovesUci = <String>[];
   bool _analysisEntryVisible = false;
   bool _importInProgress = false;
-  final ValueNotifier<int> _quickEvalCp = ValueNotifier<int>(0);
+  final ValueNotifier<EvalResult?> _quickEval = ValueNotifier<EvalResult?>(
+    null,
+  );
+  Timer? _quickEvalDebounce;
 
   static const List<String> _files = <String>[
     'a',
@@ -68,14 +74,29 @@ class _ChessGamePageState extends State<ChessGamePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rebuildHistoriesFromCurrentGame();
     _triggerQuickEval();
   }
 
   @override
   void dispose() {
-    _quickEvalCp.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _quickEvalDebounce?.cancel();
+    _quickEval.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool paused =
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached;
+    StockfishLifecycleManager.instance.setQuickEvalPaused(paused);
+    if (!paused) {
+      _triggerQuickEval();
+    }
   }
 
   @override
@@ -240,10 +261,29 @@ class _ChessGamePageState extends State<ChessGamePage> {
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.only(left: 10, top: 12, bottom: 12),
-          child: ValueListenableBuilder<int>(
-            valueListenable: _quickEvalCp,
-            builder: (BuildContext context, int cp, Widget? child) {
-              return EvalBar(centipawns: cp, mateIn: null, height: 260);
+          child: ValueListenableBuilder<EvalResult?>(
+            valueListenable: _quickEval,
+            builder: (BuildContext context, EvalResult? eval, Widget? child) {
+              return ValueListenableBuilder<bool>(
+                valueListenable:
+                    StockfishLifecycleManager.instance.quickEvalBusy,
+                builder: (BuildContext context, bool busy, Widget? child) {
+                  return ValueListenableBuilder<bool>(
+                    valueListenable:
+                        StockfishLifecycleManager.instance.quickEvalPaused,
+                    builder:
+                        (BuildContext context, bool paused, Widget? child) {
+                          return EvalBar(
+                            centipawns: eval?.centipawns ?? 0,
+                            mateIn: eval?.mateIn,
+                            height: 260,
+                            isLoading: busy,
+                            isPaused: paused,
+                          );
+                        },
+                  );
+                },
+              );
             },
           ),
         ),
@@ -748,6 +788,16 @@ class _ChessGamePageState extends State<ChessGamePage> {
   }
 
   Future<void> _triggerQuickEval() async {
+    _quickEvalDebounce?.cancel();
+    _quickEvalDebounce = Timer(const Duration(milliseconds: 200), () async {
+      if (!mounted) {
+        return;
+      }
+      await _runQuickEvalNow();
+    });
+  }
+
+  Future<void> _runQuickEvalNow() async {
     if (_importInProgress || _game.game_over == true) {
       return;
     }
@@ -767,7 +817,7 @@ class _ChessGamePageState extends State<ChessGamePage> {
     if (!mounted || eval == null) {
       return;
     }
-    _quickEvalCp.value = eval.centipawns;
+    _quickEval.value = eval;
   }
 
   void _clearSelection() {
